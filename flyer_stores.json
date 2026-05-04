@@ -1,0 +1,17 @@
+[
+  {
+    "name": "カスミ結城店",
+    "url": "https://www.kasumi.co.jp/tenpotop/ibaraki-west/yuki/313/"
+  },
+  {
+    "name": "とりせん下館店",
+    "url": "https://www.torisen.co.jp/shop/chikuseishi/%E4%B8%8B%E9%A4%A8%E5%BA%97/",
+    "type": "tokubai_direct",
+    "tokubai_store": "とりせん",
+    "tokubai_id": "5516"
+  },
+  {
+    "name": "かましん下館店",
+    "url": "https://kamashin-supermarket.jp/shop/%e4%b8%8b%e9%a4%a8%e5%ba%97/"
+  }
+]
