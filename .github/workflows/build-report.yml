@@ -23,6 +23,7 @@ jobs:
 
       - name: Node依存インストール
         run: npm install
+        run: npx playwright install
 
       - name: Python依存インストール
         run: pip install -r requirements.txt
