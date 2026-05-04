@@ -22,8 +22,7 @@ jobs:
           python-version: "3.11"
 
       - name: Node依存インストール
-        run: npm install
-        run: npx playwright install
+        run: npm install && npx playwright install
 
       - name: Python依存インストール
         run: pip install -r requirements.txt
