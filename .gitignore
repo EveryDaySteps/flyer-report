@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+
+keyword_output_v5/
+report/
+flyer_images/
+node_modules/
+
+.env
