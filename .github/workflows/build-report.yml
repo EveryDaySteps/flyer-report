@@ -39,7 +39,7 @@ jobs:
           OCRSPACE_API_KEY: ${{ secrets.OCRSPACE_API_KEY }}
 
       - name: レポート生成
-        run: python generate_flyer_keyword_report_v5.py .\keyword_output_v5 --stores-json .\flyer_stores.json
+        run: python generate_flyer_keyword_report_v5.py keyword_output_v5 --stores-json flyer_stores.json
 
       - name: Pages用フォルダ作成
         run: |
