@@ -17,6 +17,7 @@ import argparse
 import base64
 import html
 import json
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -151,6 +152,8 @@ def load_store_list(stores_json_path: Path | None) -> list[dict[str, str]]:
 
 
 def build_report(output_dir: Path, report_name: str, stores_json_path: Path | None = None) -> Path:
+    jst = timezone(timedelta(hours=9))
+    generated_at = datetime.now(jst).strftime("%Y-%m-%d %H:%M:%S")
     store_list = load_store_list(stores_json_path)
     hits = load_hits(output_dir)
     report_dir = output_dir / "report"
@@ -240,7 +243,11 @@ main{{max-width:1180px;margin:0 auto;padding:12px}} .summary{{display:grid;grid-
 .hidden{{display:none!important}} .empty{{background:white;border:1px solid var(--line);border-radius:16px;padding:28px;text-align:center;color:var(--muted)}}
 @media(max-width:680px){{main{{padding:10px}}.summary{{gap:7px}}.summary-card{{padding:10px 8px}}.value{{font-size:22px}}.keyword-list{{grid-template-columns:1fr;padding:10px}}.thumb-grid{{grid-template-columns:repeat(2,1fr)}}.store-head{{align-items:flex-start;flex-direction:column}}}}
 </style></head><body>
-<header><h1>チラシ キーワード検出レポート</h1><p>検出カードをクリックすると、該当チラシの検出位置を中心に表示します。詳細画像は1本指でスクロール、2本指で拡大縮小できます。</p></header>
+<header>
+  <h1>チラシ キーワード検出レポート</h1>
+  <p>生成日時: {generated_at}</p>
+  <p>検出カードをクリックすると、該当チラシの検出位置を中心に表示します。詳細画像は1本指でスクロール、2本指で拡大縮小できます。</p>
+</header>
 <main>
 <div class="summary"><div class="summary-card"><div class="label">検出件数</div><div class="value">{len(records)}</div></div><div class="summary-card"><div class="label">キーワード</div><div class="value">{len(keywords)}</div></div><div class="summary-card"><div class="label">店舗</div><div class="value">{len(stores)}</div></div></div>
 <div class="controls"><input id="search" type="search" placeholder="キーワード・OCR文字列で検索"><select id="storeFilter"><option value="">全店舗</option>{store_options}</select><select id="categoryFilter"><option value="">全カテゴリ</option>{cat_options}</select></div>
