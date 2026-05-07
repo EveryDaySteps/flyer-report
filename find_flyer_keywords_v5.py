@@ -490,7 +490,7 @@ def create_hit_crops(image_path: Path, hits: list[KeywordHit], crops_dir: Path, 
 
 
 def draw_debug(image_path: Path, words: list[Word], hits: list[KeywordHit], out_path: Path) -> None:
-    img = cv2.imread(str(image_path))
+    img = imread_unicode(str(image_path))
     if img is None:
         return
 
@@ -505,8 +505,20 @@ def draw_debug(image_path: Path, words: list[Word], hits: list[KeywordHit], out_
         cv2.rectangle(img, (hb[0], hb[1]), (hb[2], hb[3]), (0, 0, 255), 2)
         cv2.putText(img, str(i), (cb[0] + 5, max(24, cb[1] + 24)), cv2.FONT_HERSHEY_SIMPLEX, 0.85, color, 2, cv2.LINE_AA)
 
-    cv2.imwrite(str(out_path), img)
+    imwrite_unicode(str(out_path), img)
 
+def imread_unicode(path):
+    import numpy as np
+    data = np.fromfile(str(path), dtype=np.uint8)
+    return cv2.imdecode(data, cv2.IMREAD_COLOR)
+
+def imwrite_unicode(path, img):
+    import numpy as np
+    ext = Path(path).suffix or ".jpg"
+    ok, buf = cv2.imencode(ext, img)
+    if ok:
+        buf.tofile(str(path))
+    return ok
 
 def save_json(items: list[Any], path: Path) -> None:
     path.write_text(json.dumps([asdict(i) for i in items], ensure_ascii=False, indent=2), encoding="utf-8")
