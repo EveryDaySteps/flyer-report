@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 
+Test_Local.ps1
 flyer_manifest.json
 
 keyword_output_v5/
