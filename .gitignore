@@ -1,7 +1,10 @@
 __pycache__/
 *.pyc
 
+flyer_manifest.json
+
 keyword_output_v5/
+keyword_output_v6/
 report/
 flyer_images/
 node_modules/
