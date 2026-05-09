@@ -314,42 +314,48 @@ async function scrapeShufoo(store, browser) {
   const storeDir = path.join(OUTPUT_DIR, sanitizeDirName(store.name));
   fs.mkdirSync(storeDir, { recursive: true });
 
-  // ── 2-1. 店舗ページから shopId を取得 ──
-  console.log(`  Navigating: ${store.url}`);
-  const context = await browser.newContext({
-    viewport: { width: 1280, height: 900 },
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-  });
-  const page = await context.newPage();
-  try {
-    await page.goto(store.url, { waitUntil: 'networkidle', timeout: 30000 });
-  } catch { /* timeout 継続 */ }
-  await sleep(2000);
+  // ── 2-1. shopId を取得（設定ファイル優先 → ページ解析）──
+  let shopId = store.shufoo_shop_id || null;
 
-  const shopId = await page.evaluate(() => {
-    // a タグ・iframe・インラインスクリプトから shopId を探す
-    const candidates = [
-      ...Array.from(document.querySelectorAll('a[href*="shufoo"], a[href*="aspViewerRedirect"]'))
-        .map(el => el.href),
-      ...Array.from(document.querySelectorAll('iframe[src*="shufoo"]'))
-        .map(el => el.src)
-    ];
-    for (const href of candidates) {
-      const m = href.match(/shopId=(\d+)/);
-      if (m) return m[1];
+  if (shopId) {
+    console.log(`  shopId (config): ${shopId}`);
+  } else {
+    console.log(`  Navigating: ${store.url}`);
+    const context = await browser.newContext({
+      viewport: { width: 1280, height: 900 },
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+    });
+    const page = await context.newPage();
+    try {
+      await page.goto(store.url, { waitUntil: 'networkidle', timeout: 30000 });
+    } catch { /* timeout 継続 */ }
+    await sleep(2000);
+
+    shopId = await page.evaluate(() => {
+      // a タグ・iframe・インラインスクリプトから shopId を探す
+      const candidates = [
+        ...Array.from(document.querySelectorAll('a[href*="shufoo"], a[href*="aspViewerRedirect"]'))
+          .map(el => el.href),
+        ...Array.from(document.querySelectorAll('iframe[src*="shufoo"]'))
+          .map(el => el.src)
+      ];
+      for (const href of candidates) {
+        const m = href.match(/shopId=(\d+)/);
+        if (m) return m[1];
+      }
+      // ページ HTML 全体を検索（URL形式 shopId=NNN または JS形式 shopId: NNN）
+      const m = document.documentElement.innerHTML.match(/shopId[=:]\s*['"]?(\d+)/);
+      return m ? m[1] : null;
+    });
+
+    await context.close();
+
+    if (!shopId) {
+      console.error('  shopId が見つかりませんでした');
+      return results;
     }
-    // ページ HTML 全体を検索
-    const m = document.documentElement.innerHTML.match(/shopId=(\d+)/);
-    return m ? m[1] : null;
-  });
-
-  await context.close();
-
-  if (!shopId) {
-    console.error('  shopId が見つかりませんでした');
-    return results;
+    console.log(`  shopId: ${shopId}`);
   }
-  console.log(`  shopId: ${shopId}`);
 
   // ── 2-2. Shufoo API でチラシ一覧取得 ──
   const apiUrl = `https://asp.shufoo.net/api/shopDetailNewXML.php?publisherId=${shopId}&crosstype=asp&useUtf=true`;
@@ -388,12 +394,19 @@ async function scrapeShufoo(store, browser) {
     const bookH   = parseInt(xmlField(cXml, 'bookH')  || '512');
     const sliceW  = parseInt(xmlField(cXml, 'sliceW') || '512');
     const sliceH  = parseInt(xmlField(cXml, 'sliceH') || '512');
-
-    const tilesX  = Math.ceil(bookW / sliceW);
-    const tilesY  = Math.ceil(bookH / sliceH);
     const baseURI = contentURI.endsWith('/') ? contentURI : contentURI + '/';
 
-    console.log(`  Pages: ${totalPages}, Size: ${bookW}x${bookH}, Tiles: ${tilesX}x${tilesY}/page`);
+    // scaleSize="1,2,4,8" → URLスケール値は scaleLevel*100 (100/200/400/800)
+    // 最大スケールを選択して最高解像度のタイルを取得する
+    const scaleSizeRaw = xmlField(cXml, 'scaleSize') || '1';
+    const maxScaleLevel = Math.max(...scaleSizeRaw.split(',').map(Number).filter(n => n > 0));
+    const urlScale = maxScaleLevel * 100;  // 例: 4 → 400
+    const scaledW  = bookW * maxScaleLevel;
+    const scaledH  = bookH * maxScaleLevel;
+    const tilesX   = Math.ceil(scaledW / sliceW);
+    const tilesY   = Math.ceil(scaledH / sliceH);
+
+    console.log(`  Pages: ${totalPages}, Base: ${bookW}x${bookH}, Scale: ${maxScaleLevel}x → ${scaledW}x${scaledH}, Tiles: ${tilesX}x${tilesY}/page`);
 
     // ── 2-4. ページごとにタイルを取得・合成 ──
     for (let pageIdx = 0; pageIdx < totalPages; pageIdx++) {
@@ -404,7 +417,7 @@ async function scrapeShufoo(store, browser) {
 
       for (let ty = 0; ty < tilesY; ty++) {
         for (let tx = 0; tx < tilesX; tx++) {
-          const tileUrl = `${baseURI}index/img/${pageIdx}_100_${tileIdx}.jpg`;
+          const tileUrl = `${baseURI}index/img/${pageIdx}_${urlScale}_${tileIdx}.jpg`;
           try {
             const buf = await downloadBuffer(tileUrl);
             compositeInputs.push({ input: buf, left: tx * sliceW, top: ty * sliceH });
@@ -415,24 +428,40 @@ async function scrapeShufoo(store, browser) {
         }
       }
 
+      // タイルが1枚も取得できなかった場合は scale=100 (1x) にフォールバック
+      if (compositeInputs.length === 0 && urlScale !== 100) {
+        console.warn(`  スケール ${urlScale} でタイル取得失敗。scale=100 にフォールバック`);
+        const tileUrl = `${baseURI}index/img/${pageIdx}_100_0.jpg`;
+        try {
+          const buf = await downloadBuffer(tileUrl);
+          compositeInputs.push({ input: buf, left: 0, top: 0 });
+        } catch (e) {
+          console.warn(`  Fallback tile failed: ${e.message}`);
+        }
+      }
+
       if (compositeInputs.length === 0) {
         console.warn(`  No tiles for page ${pageIdx}`);
         continue;
       }
 
+      // 合成サイズ: 実際のタイル配置に合わせて決定
+      const canvasW = compositeInputs.length > 1 ? scaledW : bookW;
+      const canvasH = compositeInputs.length > 1 ? scaledH : bookH;
+
       try {
         await sharp({
           create: {
-            width: bookW, height: bookH,
+            width: canvasW, height: canvasH,
             channels: 3, background: { r: 255, g: 255, b: 255 }
           }
         })
           .composite(compositeInputs)
-          .jpeg({ quality: 90 })
+          .jpeg({ quality: 92 })
           .toFile(dest);
 
         const kb = Math.round(fs.statSync(dest).size / 1024);
-        console.log(`  Saved: ${path.basename(dest)} (${kb}KB)`);
+        console.log(`  Saved: ${path.basename(dest)} (${kb}KB)  [${canvasW}x${canvasH}px]`);
         results.push({ store: store.name, chirashi_id: chirashiId, page: pageIdx, path: dest, title });
       } catch (e) {
         console.error(`  Sharp error page ${pageIdx}: ${e.message}`);

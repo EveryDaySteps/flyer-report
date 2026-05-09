@@ -21,5 +21,12 @@
     "name": "西松屋筑西川島店",
     "url": "https://www.24028.jp/tenpo/detail.php?cid=8&doc=80",
     "categories": ["おむつ","粉ミルク"]
+  },
+  {
+    "name": "バースデイ下館店",
+    "url": "https://www.shimamura.gr.jp/shop/map_detail_3041.html",
+    "type": "shufoo",
+    "shufoo_shop_id": "265184",
+    "categories": ["おむつ","粉ミルク"]
   }
 ]
