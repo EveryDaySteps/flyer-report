@@ -35,19 +35,20 @@ jobs:
 
       - name: OCR実行
         run: |
-          python find_flyer_keywords_v5.py flyer_images \
-            --keywords flyer_keywords_v3.yaml \
-            --output-dir keyword_output_v5
+         python find_flyer_keywords_v6.py flyer_images \
+          --keywords flyer_keywords_v3.yaml \
+          --store-config flyer_stores.json \
+          --output-dir keyword_output_v6
         env:
           OCRSPACE_API_KEY: ${{ secrets.OCRSPACE_API_KEY }}
 
       - name: レポート生成
-        run: python generate_flyer_keyword_report_v5.py keyword_output_v5 --stores-json flyer_stores.json
+        run: python generate_flyer_keyword_report_v5.py keyword_output_v6 --stores-json flyer_stores.json
 
       - name: Pages用フォルダ作成
         run: |
           mkdir public
-          cp keyword_output_v5/flyer_keyword_report.html public/index.html
+          cp keyword_output_v6/flyer_keyword_report.html public/index.html
 
       - name: GitHub Pagesへデプロイ
         uses: peaceiris/actions-gh-pages@v3
