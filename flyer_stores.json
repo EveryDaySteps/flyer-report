@@ -1,17 +1,25 @@
 [
   {
     "name": "カスミ結城店",
-    "url": "https://www.kasumi.co.jp/tenpotop/ibaraki-west/yuki/313/"
+    "url": "https://www.kasumi.co.jp/tenpotop/ibaraki-west/yuki/313/",
+    "categories": ["アイス"]
   },
   {
     "name": "とりせん下館店",
     "url": "https://www.torisen.co.jp/shop/chikuseishi/%E4%B8%8B%E9%A4%A8%E5%BA%97/",
     "type": "tokubai_direct",
     "tokubai_store": "とりせん",
-    "tokubai_id": "5516"
+    "tokubai_id": "5516",
+    "categories": ["アイス"]
   },
   {
     "name": "かましん下館店",
-    "url": "https://kamashin-supermarket.jp/shop/%e4%b8%8b%e9%a4%a8%e5%ba%97/"
+    "url": "https://kamashin-supermarket.jp/shop/%e4%b8%8b%e9%a4%a8%e5%ba%97/",
+    "categories": ["アイス"]
+  },
+  {
+    "name": "西松屋筑西川島店",
+    "url": "https://www.24028.jp/tenpo/detail.php?cid=8&doc=80",
+    "categories": ["おむつ","粉ミルク"]
   }
 ]

@@ -491,6 +491,138 @@ async function scrapeKamashinDirect(store, browser) {
 }
 
 // ──────────────────────────────────────────────
+// 4. 西松屋 (nishimatsuya) — Playwright スクリーンショット方式
+// ──────────────────────────────────────────────
+
+async function scrapeNishimatsuya(store, browser) {
+  const results  = [];
+  const storeDir = path.join(OUTPUT_DIR, sanitizeDirName(store.name));
+  fs.mkdirSync(storeDir, { recursive: true });
+
+  // ── Step 1: 店舗ページ (24028.jp) からフリップブック URL を収集 ──
+  console.log(`  Navigating: ${store.url}`);
+  const listContext = await browser.newContext({
+    viewport: { width: 1280, height: 900 },
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+  });
+  const listPage = await listContext.newPage();
+  try {
+    await listPage.goto(store.url, { waitUntil: 'networkidle', timeout: 30000 });
+  } catch { /* timeout 継続 */ }
+  await sleep(2000);
+
+  // nishimatsuya.com/flier/{名前}/ 形式の href を収集（重複排除）
+  const flipperUrls = await listPage.evaluate(() => {
+    const seen = new Set();
+    const urls = [];
+    document.querySelectorAll('a[href*="nishimatsuya.com/flier/"]').forEach(a => {
+      const href = a.href.split('#')[0].replace(/\/?$/, '/'); // フラグメント除去 + 末尾スラッシュ正規化
+      if (!seen.has(href)) {
+        seen.add(href);
+        urls.push(href);
+      }
+    });
+    return urls;
+  });
+
+  await listContext.close();
+  console.log(`  Found ${flipperUrls.length} flipbook URL(s)`);
+
+  if (flipperUrls.length === 0) {
+    console.warn('  フリップブック URL が見つかりませんでした');
+    return results;
+  }
+
+  // ── Step 2: 各フリップブックをスクリーンショット ──
+  for (const flipperUrl of flipperUrls) {
+    // チラシ名を URL から抽出: ".../flier/chirashi_0423_0506/" → "chirashi_0423_0506"
+    const flyerName = flipperUrl.replace(/\/$/, '').split('/').pop() || 'unknown';
+    console.log(`  Flipbook: ${flyerName}`);
+
+    // ── Step 2a: book.xml からページ数と寸法を取得 ──
+    let totalPages  = 1;
+    let pageW = 630;
+    let pageH = 900;
+    try {
+      const xmlText = (await downloadBuffer(`${flipperUrl}book.xml`)).toString('utf8');
+      totalPages = parseInt(xmlField(xmlText, 'total') || '1', 10);
+      pageW      = parseInt(xmlField(xmlText, 'pageWidth')  || '630', 10);
+      pageH      = parseInt(xmlField(xmlText, 'pageHeight') || '900', 10);
+      console.log(`    book.xml: ${totalPages} page(s), ${pageW}x${pageH}px`);
+    } catch (e) {
+      console.warn(`    book.xml 取得失敗 (${e.message})、デフォルト値で続行`);
+    }
+
+    // ── Step 2b: deviceScaleFactor:2 で高解像度コンテキストを開く ──
+    // 実効解像度: pageW*2 × pageH*2 px（例: 1260×1800px）
+    const viewerContext = await browser.newContext({
+      viewport: { width: pageW, height: pageH },
+      deviceScaleFactor: 2,
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+    });
+    const viewerPage = await viewerContext.newPage();
+
+    try {
+      await viewerPage.goto(flipperUrl, { waitUntil: 'networkidle', timeout: 45000 });
+    } catch { /* timeout 継続 */ }
+
+    // #flipper-app が表示されるまで待機
+    try {
+      await viewerPage.waitForSelector('#flipper-app', { state: 'visible', timeout: 15000 });
+    } catch (e) {
+      console.warn(`    #flipper-app が見つかりません: ${e.message}`);
+      await viewerContext.close();
+      continue;
+    }
+    await sleep(2000); // 初期アニメーション完了待機
+
+    // ── Step 2c: ページ数分ループしてスクリーンショット ──
+    for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+      const dest = path.join(storeDir, `${flyerName}_p${pageNum}.png`);
+
+      try {
+        const flipperEl = await viewerPage.$('#flipper-app');
+        if (!flipperEl) { console.warn(`    ページ ${pageNum}: #flipper-app 消失`); break; }
+
+        await flipperEl.screenshot({ path: dest });
+        const kb = Math.round(fs.statSync(dest).size / 1024);
+        console.log(`    Saved: ${path.basename(dest)} (${kb}KB)`);
+        results.push({ store: store.name, flyer: flyerName, page: pageNum, path: dest, url: flipperUrl });
+
+        if (pageNum >= totalPages) break;
+
+        // ── 次ページへ: viewer-flipr-outer ボタンをクリック ──
+        const flipRSelectors = ['#viewer-flipr-outer', '#FlipR', '.FlipR', '[data-action="flipR"]', '[id*="flipr"]'];
+        let clicked = false;
+        for (const sel of flipRSelectors) {
+          const btn = await viewerPage.$(sel);
+          if (btn) {
+            await btn.click();
+            clicked = true;
+            console.log(`    → 次ページ (${sel})`);
+            break;
+          }
+        }
+        if (!clicked) {
+          // フォールバック: ページ右端をクリック
+          console.warn(`    次ページボタン未検出。右端クリックで代替`);
+          await viewerPage.mouse.click(Math.floor(pageW * 0.9), Math.floor(pageH * 0.5));
+        }
+
+        await sleep(2000); // めくりアニメーション完了待機
+
+      } catch (e) {
+        console.error(`    ページ ${pageNum} 失敗: ${e.message}`);
+      }
+    }
+
+    await viewerContext.close();
+  }
+
+  return results;
+}
+
+// ──────────────────────────────────────────────
 // 処理方式の自動判別
 // ──────────────────────────────────────────────
 
@@ -499,6 +631,9 @@ async function scrapeKamashinDirect(store, browser) {
  * @returns {'tokubai_widget'|'shufoo'|'kamashin_direct'|null}
  */
 async function detectType(store, browser) {
+  // ドメインで即時判定（ページを開かずに済む）
+  if (store.url.includes('24028.jp')) return 'nishimatsuya';
+
   const context = await browser.newContext({
     viewport: { width: 1280, height: 900 },
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
@@ -528,6 +663,11 @@ async function detectType(store, browser) {
     // チラシ画像が直接あれば kamashin_direct
     if (document.querySelector('img[alt*="チラシ"]')) {
       return 'kamashin_direct';
+    }
+
+    // 西松屋フリップブックリンクがあれば nishimatsuya（フォールバック）
+    if (html.includes('nishimatsuya.com/flier/')) {
+      return 'nishimatsuya';
     }
 
     return null;
@@ -572,6 +712,8 @@ async function detectType(store, browser) {
         results = await scrapeShufoo(store, browser);
       } else if (type === 'kamashin_direct') {
         results = await scrapeKamashinDirect(store, browser);
+      } else if (type === 'nishimatsuya') {
+        results = await scrapeNishimatsuya(store, browser);
       }
     } catch (e) {
       console.error(`  Fatal error: ${e.message}`);
