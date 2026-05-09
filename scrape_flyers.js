@@ -674,36 +674,32 @@ async function detectType(store, browser) {
   } catch { /* timeout 継続 */ }
   await sleep(1500);
 
-  const type = await page.evaluate(() => {
-    const html = document.documentElement.innerHTML;
-
-    // Tokubai ウィジェットリンクがあれば tokubai_widget
-    if (document.querySelector('a[href*="widgets.tokubai.co.jp"]') ||
-        html.includes('widgets.tokubai.co.jp')) {
-      return 'tokubai_widget';
-    }
-
-    // Shufoo リンクがあれば shufoo
-    if (document.querySelector('a[href*="shufoo"], a[href*="aspViewerRedirect"], iframe[src*="shufoo"]') ||
-        html.includes('shufoo.net') || html.includes('aspViewerRedirect')) {
-      return 'shufoo';
-    }
-
-    // チラシ画像が直接あれば kamashin_direct
-    if (document.querySelector('img[alt*="チラシ"]')) {
-      return 'kamashin_direct';
-    }
-
-    // 西松屋フリップブックリンクがあれば nishimatsuya（フォールバック）
-    if (html.includes('nishimatsuya.com/flier/')) {
-      return 'nishimatsuya';
-    }
-
-    return null;
-  });
+  // page.evaluate の代わりに page.content() で HTML を取得し Node.js 側で判定する
+  // → ページ遷移によって実行コンテキストが破棄されても例外が起きない
+  let html = '';
+  try {
+    html = await page.content();
+  } catch (e) {
+    console.warn(`  page.content() 失敗: ${e.message}`);
+  }
 
   await context.close();
-  return type;
+
+  if (!html) return null;
+
+  // Tokubai ウィジェットリンクがあれば tokubai_widget
+  if (html.includes('widgets.tokubai.co.jp')) return 'tokubai_widget';
+
+  // Shufoo リンクがあれば shufoo
+  if (html.includes('shufoo.net') || html.includes('aspViewerRedirect')) return 'shufoo';
+
+  // チラシ画像が直接あれば kamashin_direct
+  if (html.includes('alt="チラシ') || html.includes("alt='チラシ")) return 'kamashin_direct';
+
+  // 西松屋フリップブックリンクがあれば nishimatsuya（フォールバック）
+  if (html.includes('nishimatsuya.com/flier/')) return 'nishimatsuya';
+
+  return null;
 }
 
 // ──────────────────────────────────────────────
@@ -721,7 +717,11 @@ async function detectType(store, browser) {
     let type = store.type || null;
     if (!type) {
       console.log(`\n=== ${store.name} — 方式を自動判別中... ===`);
-      type = await detectType(store, browser);
+      try {
+        type = await detectType(store, browser);
+      } catch (e) {
+        console.warn(`  判別中にエラー: ${e.message}`);
+      }
       if (!type) {
         console.warn(`  判別できませんでした。スキップします。`);
         continue;
